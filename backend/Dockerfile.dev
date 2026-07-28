@@ -1,0 +1,11 @@
+FROM golang:1.22-alpine
+
+RUN apk add --no-cache git ca-certificates ffmpeg bash curl
+
+RUN go install github.com/air-verse/air@v1.52.3
+
+WORKDIR /app
+
+EXPOSE 8000
+
+CMD ["air", "-c", ".air.toml"]

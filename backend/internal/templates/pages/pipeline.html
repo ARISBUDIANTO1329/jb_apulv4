@@ -1,0 +1,45 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-2xl font-semibold text-gray-900">Pipeline</h1>
+    </div>
+
+    <!-- Pipeline Status -->
+    <div id="pipeline-status" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+         hx-get="/api/pipeline/status" hx-trigger="every 10s" hx-swap="innerHTML">
+        <div class="bg-white shadow rounded-lg p-4">
+            <h3 class="text-sm font-medium text-gray-500">Production</h3>
+            <p class="text-2xl font-semibold text-gray-900 mt-1">0</p>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">idle</span>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4">
+            <h3 class="text-sm font-medium text-gray-500">Upload</h3>
+            <p class="text-2xl font-semibold text-gray-900 mt-1">0</p>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">idle</span>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4">
+            <h3 class="text-sm font-medium text-gray-500">Shorts</h3>
+            <p class="text-2xl font-semibold text-gray-900 mt-1">0</p>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">idle</span>
+        </div>
+        <div class="bg-white shadow rounded-lg p-4">
+            <h3 class="text-sm font-medium text-gray-500">Livestream</h3>
+            <p class="text-2xl font-semibold text-gray-900 mt-1">0</p>
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">idle</span>
+        </div>
+    </div>
+
+    <!-- Job List -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-5 sm:px-6 border-b border-gray-200">
+            <h3 class="text-lg font-medium text-gray-900">Recent Jobs</h3>
+        </div>
+        <div id="job-list" class="divide-y divide-gray-200"
+             hx-get="/api/pipeline/jobs" hx-trigger="every 15s" hx-swap="innerHTML">
+            <div class="px-4 py-5 sm:px-6 text-center text-gray-500">
+                No jobs yet
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}

@@ -1,0 +1,47 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-xl font-semibold text-gray-900">Shorts Monitor</h1>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Created</div><div class="text-2xl font-bold" id="s-created">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Generating</div><div class="text-2xl font-bold text-blue-600" id="s-generating">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Ready</div><div class="text-2xl font-bold text-green-600" id="s-ready">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Failed</div><div class="text-2xl font-bold text-red-600" id="s-failed">-</div></div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Active Shorts</h3></div>
+        <div id="shorts-list" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<script>
+async function refresh() {
+    const r = await fetch('/api/shorts');
+    const jobs = await r.json();
+    document.getElementById('s-created').textContent = jobs.filter(j => j.status === 'created').length;
+    document.getElementById('s-generating').textContent = jobs.filter(j => j.status === 'generating').length;
+    document.getElementById('s-ready').textContent = jobs.filter(j => j.status === 'ready').length;
+    document.getElementById('s-failed').textContent = jobs.filter(j => j.status === 'failed').length;
+
+    const c = document.getElementById('shorts-list');
+    if (!jobs.length) {
+        c.innerHTML = '<div class="p-8 text-center text-gray-400">Tidak ada shorts aktif</div>';
+        return;
+    }
+    c.innerHTML = jobs.slice(0,10).map(j => {
+        const sc = {created:'gray',generating:'blue',ready:'green',uploading:'blue',completed:'green',failed:'red'}[j.status]||'gray';
+        return `<div class="px-4 py-3 flex items-center justify-between">
+            <div>
+                <div class="text-sm font-medium text-gray-900">${j.long_title || 'Shorts'}</div>
+                <div class="text-xs text-gray-500">${j.short_count} shorts • ${new Date(j.created_at).toLocaleString('id-ID')}</div>
+            </div>
+            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${sc}-100 text-${sc}-800">${j.status}</span>
+        </div>`;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', refresh);
+setInterval(refresh, 15000);
+</script>
+{{end}}

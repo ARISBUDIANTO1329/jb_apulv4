@@ -1,0 +1,66 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-gray-900">Production</h1>
+        <button onclick="showNewProdModal()" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700">+ New Job</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Pending</div><div class="text-2xl font-bold" id="prod-pending">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Processing</div><div class="text-2xl font-bold text-blue-600" id="prod-processing">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Done</div><div class="text-2xl font-bold text-green-600" id="prod-done">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Failed</div><div class="text-2xl font-bold text-red-600" id="prod-failed">-</div></div>
+    </div>
+
+    <!-- Job List -->
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Jobs</h3></div>
+        <div id="jobs-list" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<script>
+async function loadJobs() {
+    const r = await fetch('/api/production');
+    const jobs = await r.json();
+    const c = document.getElementById('jobs-list');
+    if (!jobs.length) {
+        c.innerHTML = '<div class="p-8 text-center text-gray-400">Belum ada production job</div>';
+        return;
+    }
+    document.getElementById('prod-pending').textContent = jobs.filter(j => j.status === 'pending').length;
+    document.getElementById('prod-processing').textContent = jobs.filter(j => j.status === 'processing').length;
+    document.getElementById('prod-done').textContent = jobs.filter(j => j.status === 'done').length;
+    document.getElementById('prod-failed').textContent = jobs.filter(j => j.status === 'failed').length;
+
+    c.innerHTML = jobs.map(j => {
+        const statusColor = {pending:'gray',processing:'blue',done:'green',failed:'red'}[j.status] || 'gray';
+        return `<div class="px-4 py-3 flex items-center justify-between">
+            <div>
+                <div class="text-sm font-medium text-gray-900">#${j.id.substring(0,8)} ${j.channel_name}</div>
+                <div class="text-xs text-gray-500">${j.production_method} • ${new Date(j.created_at).toLocaleString('id-ID')}</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${j.status}</span>
+                <div class="w-16 bg-gray-200 rounded-full h-2"><div class="bg-indigo-600 h-2 rounded-full" style="width:${j.progress}%"></div></div>
+                <span class="text-xs text-gray-500">${j.progress}%</span>
+                ${j.status === 'failed' ? `<button onclick="retryJob('${j.id}')" class="text-xs text-blue-600 hover:underline">Retry</button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function retryJob(id) {
+    await fetch('/api/production/' + id + '/retry', {method:'POST'});
+    loadJobs();
+}
+
+function showNewProdModal() {
+    alert('Pilih channel dan method di halaman channel detail');
+}
+
+document.addEventListener('DOMContentLoaded', loadJobs);
+setInterval(loadJobs, 10000);
+</script>
+{{end}}

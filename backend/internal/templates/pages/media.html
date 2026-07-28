@@ -1,0 +1,412 @@
+{{define "content"}}
+<div class="space-y-6" x-data="mediaPage()">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-semibold text-gray-900">Asset Library</h1>
+            <p class="text-sm text-gray-500" x-text="channelLabel"></p>
+        </div>
+        <div class="flex items-center gap-2">
+            <select x-model="currentChannel" @change="loadStats(); loadFiles()" class="px-3 py-2 border rounded-lg text-sm">
+                <option value="">Pilih Channel</option>
+                <template x-for="ch in channels" :key="ch.id"><option :value="ch.id">#<span x-text="ch.id"></span> - <span x-text="ch.name"></span></option></template>
+            </select>
+        </div>
+    </div>
+
+    <!-- Alert -->
+    <div x-show="alert.show" x-transition class="p-3 rounded-lg text-sm" :class="alert.type === 'error' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'" x-text="alert.msg"></div>
+
+    <!-- Group Grid -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <template x-for="g in groups" :key="g.type">
+            <button @click="selectGroup(g.type)" class="p-3 rounded-lg border-2 text-left transition-colors" :class="currentGroup === g.type ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 bg-white hover:border-gray-300'">
+                <div class="text-sm font-medium text-gray-900" x-text="g.label"></div>
+                <div class="text-xs text-gray-500" x-text="g.desc"></div>
+                <div class="text-lg font-bold mt-1" :class="currentGroup === g.type ? 'text-indigo-600' : 'text-gray-700'" x-text="getGroupCount(g.type)"></div>
+            </button>
+        </template>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="bg-white shadow rounded-lg p-4">
+        <h3 class="text-sm font-medium text-gray-700 mb-3">Upload</h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Target Folder</label>
+                <select x-model="uploadGroup" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <template x-for="g in groups" :key="g.type"><option :value="g.type" x-text="g.label"></option></template>
+                </select>
+            </div>
+            <div x-show="uploadGroup === 'metadata'">
+                <label class="block text-xs text-gray-500 mb-1">Metadata Type</label>
+                <select x-model="metadataCategory" class="w-full px-3 py-2 border rounded-lg text-sm">
+                    <option value="title_bank">Judul (Title Bank)</option>
+                    <option value="description_bank">Deskripsi (Description)</option>
+                    <option value="tag_bank">Tag</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">File</label>
+                <input type="file" x-ref="fileInput" multiple class="w-full px-3 py-2 border rounded-lg text-sm" @change="onFileSelect">
+            </div>
+            <div class="flex items-end gap-2">
+                <button @click="doUpload" :disabled="!currentChannel || uploading" class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-50" x-text="uploading ? 'Uploading...' : 'Upload'"></button>
+            </div>
+        </div>
+        <div x-show="uploading" class="mt-3">
+            <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-indigo-600 h-2 rounded-full transition-all" :style="'width:' + uploadProgress + '%'"></div></div>
+            <p class="text-xs text-gray-500 mt-1" x-text="uploadProgress + '%'"></p>
+        </div>
+    </div>
+
+    <!-- Background Upload Status -->
+    <div x-show="bgUploads.length > 0" class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <h3 class="text-sm font-medium text-blue-700 mb-2">Background Uploads</h3>
+        <div class="space-y-2">
+            <template x-for="u in bgUploads" :key="u.id">
+                <div class="flex items-center justify-between p-2 bg-white rounded border">
+                    <div>
+                        <div class="text-sm font-medium text-gray-900" x-text="u.fileName"></div>
+                        <div class="text-xs text-gray-500" x-text="u.status"></div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium" :class="u.status === 'completed' ? 'bg-green-100 text-green-800' : u.status === 'error' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'" x-text="u.status"></span>
+                        <button x-show="u.status === 'error'" @click="retryUpload(u.id)" class="text-xs text-blue-600 hover:underline">Retry</button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Search + Actions -->
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <input x-model="searchQuery" @keyup.enter="loadFiles()" placeholder="Cari file..." class="px-3 py-2 border rounded-lg text-sm w-64">
+            <button @click="loadFiles()" class="px-3 py-2 bg-gray-100 text-sm rounded-lg hover:bg-gray-200">Cari</button>
+            <button @click="searchQuery=''; loadFiles()" class="px-3 py-2 text-sm text-gray-500 hover:text-gray-700">Reset</button>
+        </div>
+        <div class="flex items-center gap-2">
+            <button @click="deleteAll()" :disabled="!currentGroup || !currentChannel" class="px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg disabled:opacity-50">🗑 Hapus Semua</button>
+        </div>
+    </div>
+
+    <!-- File List -->
+    <div class="bg-white shadow rounded-lg overflow-hidden">
+        <table class="w-full">
+            <thead class="bg-gray-50"><tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">File</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Type</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Size</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Updated</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Actions</th>
+            </tr></thead>
+            <tbody class="divide-y divide-gray-200">
+                <template x-for="f in files" :key="f.id">
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3">
+                            <div class="text-sm font-medium text-gray-900" x-text="f.original_name || f.filename"></div>
+                            <div class="text-xs text-gray-400" x-text="f.file_path"></div>
+                        </td>
+                        <td class="px-4 py-3"><span class="inline-flex px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700" x-text="f.asset_type"></span></td>
+                        <td class="px-4 py-3 text-sm text-gray-600" x-text="formatSize(f.file_size)"></td>
+                        <td class="px-4 py-3 text-sm text-gray-500" x-text="formatDate(f.updated_at)"></td>
+                        <td class="px-4 py-3 text-right">
+                            <div class="flex items-center justify-end gap-1">
+                                <a :href="'/api/media/download/' + f.id" class="p-1 text-gray-400 hover:text-blue-600" title="Download">⬇️</a>
+                                <button @click="previewFile(f)" class="p-1 text-gray-400 hover:text-green-600" title="Preview" x-show="isPreviewable(f)">👁</button>
+                                <button @click="deleteFile(f.id)" class="p-1 text-gray-400 hover:text-red-600" title="Delete">🗑</button>
+                            </div>
+                        </td>
+                    </tr>
+                </template>
+                <tr x-show="!files.length"><td colspan="5" class="px-4 py-8 text-center text-gray-400">Tidak ada file</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between" x-show="totalPages > 1">
+        <div class="text-sm text-gray-500">Page <span x-text="page"></span> of <span x-text="totalPages"></span></div>
+        <div class="flex items-center gap-2">
+            <button @click="page--; loadFiles()" :disabled="page <= 1" class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50">Prev</button>
+            <button @click="page++; loadFiles()" :disabled="page >= totalPages" class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50">Next</button>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div x-show="preview.show" x-transition class="fixed inset-0 z-50" @click.self="preview.show=false">
+        <div class="absolute inset-0 bg-black bg-opacity-75"></div>
+        <div class="relative max-w-4xl mx-auto mt-10 bg-white rounded-xl shadow-xl overflow-hidden" @click.stop>
+            <div class="flex items-center justify-between p-4 border-b">
+                <div>
+                    <div class="font-medium" x-text="preview.name"></div>
+                    <div class="text-xs text-gray-500" x-text="preview.type + ' • ' + preview.size"></div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <a :href="'/api/media/download/' + preview.id" class="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">Download</a>
+                    <button @click="preview.show=false" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">✕ Close</button>
+                </div>
+            </div>
+            <div class="p-4 flex items-center justify-center bg-black min-h-[300px]">
+                <div x-show="preview.loading" class="text-white text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
+                    <div>Loading video...</div>
+                </div>
+                <video x-show="preview.mime && preview.mime.startsWith('video') && !preview.loading"
+                    :src="'/api/media/stream/' + preview.id"
+                    @loadstart="preview.loading=true"
+                    @canplay="preview.loading=false"
+                    @error="preview.loading=false"
+                    preload="metadata"
+                    controls
+                    class="max-w-full max-h-[70vh]"></video>
+                <audio x-show="preview.mime && preview.mime.startsWith('audio')"
+                    :src="'/api/media/stream/' + preview.id"
+                    preload="metadata"
+                    controls
+                    class="w-full"></audio>
+                <img x-show="preview.mime && preview.mime.startsWith('image')"
+                    :src="'/api/media/preview/' + preview.id"
+                    class="max-w-full max-h-[70vh]">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// SSR data from Go template
+const SSR_CHANNELS = {{.ChannelsJSON | safeHTML}};
+const SSR_GROUPS = {{.GroupsJSON | safeHTML}};
+
+function mediaPage() {
+    return {
+        channels: SSR_CHANNELS || [],
+        currentChannel: (SSR_CHANNELS && SSR_CHANNELS.length > 0) ? SSR_CHANNELS[0].ID : '',
+        groups: SSR_GROUPS || [],
+        stats: {},
+        currentGroup: '',
+        files: [],
+        page: 1,
+        perPage: 12,
+        totalPages: 1,
+        searchQuery: '',
+        uploadGroup: 'video',
+        metadataCategory: 'title_bank',
+        uploading: false,
+        uploadProgress: 0,
+        selectedFiles: [],
+        bgUploads: [],
+        worker: null,
+        alert: { show: false, msg: '', type: 'info' },
+        preview: { show: false, id: '', name: '', type: '', size: '', mime: '', loading: false },
+
+        get channelLabel() {
+            const ch = this.channels.find(c => c.id == this.currentChannel);
+            return ch ? `#${ch.id} • ${ch.name} • ${ch.niche || '-'}` : 'Pilih channel';
+        },
+
+        async init() {
+            // Init background upload worker
+            this.initWorker();
+            // Parse SSR JSON data if needed
+            if (typeof this.channels === 'string') {
+                try { this.channels = JSON.parse(this.channels); } catch(e) {}
+            }
+            if (typeof this.groups === 'string') {
+                try { this.groups = JSON.parse(this.groups); } catch(e) {}
+            }
+            if (this.channels.length && !this.currentChannel) {
+                this.currentChannel = this.channels[0].ID || this.channels[0].id;
+            }
+            if (this.currentChannel) {
+                await this.loadStats();
+                await this.loadFiles();
+            }
+            // Load pending uploads
+            if (this.worker) {
+                this.worker.postMessage({ type: 'get_pending' });
+            }
+        },
+
+        initWorker() {
+            if (typeof Worker === 'undefined') return;
+            try {
+                this.worker = new Worker('/static/upload-worker.js');
+                this.worker.onmessage = (e) => {
+                    const { type, uploadId, fileName, result, error, uploads } = e.data;
+                    switch (type) {
+                        case 'ready':
+                            console.log('[UploadWorker] Ready');
+                            break;
+                        case 'upload_queued':
+                            this.bgUploads.push({ id: uploadId, fileName, status: 'pending' });
+                            break;
+                        case 'upload_complete':
+                            const idx = this.bgUploads.findIndex(u => u.id === uploadId);
+                            if (idx >= 0) this.bgUploads[idx].status = 'completed';
+                            this.showAlert('Upload selesai: ' + fileName, 'success');
+                            this.loadStats();
+                            this.loadFiles();
+                            break;
+                        case 'upload_error':
+                            const errIdx = this.bgUploads.findIndex(u => u.id === uploadId);
+                            if (errIdx >= 0) this.bgUploads[errIdx].status = 'error';
+                            this.showAlert('Upload error: ' + error, 'error');
+                            break;
+                        case 'pending_list':
+                            this.bgUploads = uploads || [];
+                            break;
+                    }
+                };
+                this.worker.postMessage({ type: 'init' });
+            } catch (e) {
+                console.log('Worker not supported, falling back to direct upload');
+            }
+        },
+
+        async loadChannels() {
+            if (this.channels.length) return; // SSR data already loaded
+            const r = await fetch('/api/channels');
+            this.channels = await r.json();
+        },
+
+        async loadGroups() {
+            if (this.groups.length) return; // SSR data already loaded
+            const r = await fetch('/api/media/groups');
+            this.groups = await r.json();
+        },
+
+        async loadStats() {
+            if (!this.currentChannel) return;
+            const r = await fetch('/api/media/stats?channel_id=' + this.currentChannel);
+            this.stats = await r.json();
+        },
+
+        getGroupCount(type) {
+            const s = this.stats.find(s => s.asset_type === type);
+            return s ? s.count : 0;
+        },
+
+        selectGroup(type) {
+            this.currentGroup = type;
+            this.page = 1;
+            this.loadFiles();
+        },
+
+        async loadFiles() {
+            if (!this.currentChannel) { this.files = []; return; }
+            let url = `/api/media?channel_id=${this.currentChannel}&page=${this.page}&per_page=${this.perPage}`;
+            if (this.currentGroup) url += `&asset_type=${this.currentGroup}`;
+            if (this.searchQuery) url += `&search=${encodeURIComponent(this.searchQuery)}`;
+            const r = await fetch(url);
+            const data = await r.json();
+            this.files = Array.isArray(data) ? data : [];
+            this.totalPages = Math.max(1, Math.ceil((this.files.length < this.perPage ? this.page * this.perPage : (this.page + 1) * this.perPage) / this.perPage));
+        },
+
+        formatSize(bytes) {
+            if (!bytes) return '-';
+            if (bytes > 1024*1024*1024) return (bytes/1024/1024/1024).toFixed(1) + 'GB';
+            if (bytes > 1024*1024) return (bytes/1024/1024).toFixed(1) + 'MB';
+            if (bytes > 1024) return (bytes/1024).toFixed(1) + 'KB';
+            return bytes + 'B';
+        },
+
+        formatDate(d) {
+            if (!d) return '-';
+            return new Date(d).toLocaleDateString('id-ID', {day:'numeric',month:'short',year:'numeric'});
+        },
+
+        isPreviewable(f) {
+            return f.mime && (f.mime.startsWith('video') || f.mime.startsWith('audio') || f.mime.startsWith('image'));
+        },
+
+        previewFile(f) {
+            this.preview = { show: true, id: f.id, name: f.original_name || f.filename, type: f.asset_type, size: this.formatSize(f.file_size), mime: f.mime };
+        },
+
+        onFileSelect(e) {
+            this.selectedFiles = Array.from(e.target.files);
+        },
+
+        async doUpload() {
+            if (!this.currentChannel || !this.selectedFiles.length) { this.showAlert('Pilih channel dan file', 'error'); return; }
+            this.uploading = true;
+            this.uploadProgress = 0;
+            const total = this.selectedFiles.length;
+            let done = 0;
+
+            for (const file of this.selectedFiles) {
+                // Try background worker first
+                if (this.worker) {
+                    this.worker.postMessage({
+                        type: 'upload',
+                        data: {
+                            channelId: this.currentChannel,
+                            assetType: this.uploadGroup,
+                            metadataCategory: this.uploadGroup === 'metadata' ? this.metadataCategory : null,
+                            file: file,
+                            fileName: file.name,
+                            fileSize: file.size
+                        }
+                    });
+                    done++;
+                    this.uploadProgress = Math.round(done/total*100);
+                } else {
+                    // Fallback to direct upload
+                    const fd = new FormData();
+                    fd.append('channel_id', this.currentChannel);
+                    fd.append('asset_type', this.uploadGroup);
+                    if (this.uploadGroup === 'metadata') fd.append('metadata_category', this.metadataCategory);
+                    fd.append('file', file);
+                    try {
+                        const r = await fetch('/api/media/upload', {method:'POST', body:fd});
+                        if (!r.ok) throw new Error(await r.text());
+                    } catch(e) { this.showAlert('Upload error: ' + e.message, 'error'); }
+                    done++;
+                    this.uploadProgress = Math.round(done/total*100);
+                }
+            }
+
+            this.uploading = false;
+            this.uploadProgress = 0;
+            this.selectedFiles = [];
+            this.$refs.fileInput.value = '';
+            this.showAlert('Upload queued! Bisa pindah halaman, upload tetap jalan.', 'success');
+            await this.loadStats();
+            await this.loadFiles();
+        },
+
+        retryUpload(uploadId) {
+            if (this.worker) {
+                this.worker.postMessage({ type: 'retry', data: { uploadId } });
+                const idx = this.bgUploads.findIndex(u => u.id === uploadId);
+                if (idx >= 0) this.bgUploads[idx].status = 'pending';
+            }
+        },
+
+        async deleteFile(id) {
+            if (!confirm('Hapus file ini?')) return;
+            await fetch('/api/media/' + id, {method:'DELETE'});
+            this.showAlert('File dihapus', 'success');
+            await this.loadStats();
+            await this.loadFiles();
+        },
+
+        async deleteAll() {
+            if (!confirm(`Hapus semua file di ${this.currentGroup} untuk channel ini?`)) return;
+            await fetch(`/api/media/group/${this.currentGroup}?channel_id=${this.currentChannel}`, {method:'DELETE'});
+            this.showAlert('Semua file dihapus', 'success');
+            await this.loadStats();
+            await this.loadFiles();
+        },
+
+        showAlert(msg, type) {
+            this.alert = {show:true, msg, type};
+            setTimeout(() => this.alert.show = false, 3000);
+        }
+    };
+}
+document.addEventListener('alpine:init', () => {});
+</script>
+{{end}}

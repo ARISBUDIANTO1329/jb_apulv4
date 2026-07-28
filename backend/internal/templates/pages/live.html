@@ -1,0 +1,141 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-gray-900">Livestream</h1>
+        <div class="flex gap-2">
+            <button onclick="showScheduleModal()" class="px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">Schedule</button>
+            <button onclick="showPublishModal()" class="px-3 py-2 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200">🔴 Go Live</button>
+        </div>
+    </div>
+
+    <!-- Running Jobs -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Running / Scheduled</h3></div>
+        <div id="live-jobs" class="divide-y divide-gray-200"></div>
+    </div>
+
+    <!-- All Jobs -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">All Livestream Jobs</h3></div>
+        <div id="all-live" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<div id="modal-pub" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black bg-opacity-50" onclick="this.parentElement.classList.add('hidden')"></div>
+    <div class="relative max-w-lg mx-auto mt-16 bg-white rounded-xl shadow-xl p-6">
+        <h2 class="text-lg font-semibold mb-4">🔴 Go Live Now</h2>
+        <div class="space-y-3">
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Channel</label>
+                <select id="live-channel" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Title</label>
+                <input id="live-title" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Stream title">
+            </div>
+            <div>
+                <label class="block text-sm text-gray-600 mb-1">Video Source</label>
+                <select id="live-source" class="w-full px-3 py-2 border rounded-lg text-sm"></select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">Quality</label>
+                    <select id="live-quality" class="w-full px-3 py-2 border rounded-lg text-sm">
+                        <option value="high">1080p</option>
+                        <option value="low">720p</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600 mb-1">Duration (hours)</label>
+                    <input id="live-duration" type="number" value="2" class="w-full px-3 py-2 border rounded-lg text-sm">
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <label class="flex items-center gap-2"><input type="checkbox" id="live-mp3"> Use MP3</label>
+                <label class="flex items-center gap-2"><input type="checkbox" id="live-sfx"> Use SFX</label>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-6">
+            <button onclick="this.closest('#modal-pub').classList.add('hidden')" class="px-4 py-2 text-sm text-gray-600">Batal</button>
+            <button onclick="publishNow()" class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700">🔴 Start Live</button>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadJobs() {
+    const r = await fetch('/api/livestream');
+    const jobs = await r.json();
+    const running = document.getElementById('live-jobs');
+    const all = document.getElementById('all-live');
+
+    const runningJobs = jobs.filter(j => ['running','scheduled'].includes(j.status));
+    running.innerHTML = runningJobs.length ? runningJobs.map(j => renderJob(j, true)).join('') : '<div class="p-4 text-center text-gray-400 text-sm">Tidak ada live aktif</div>';
+    all.innerHTML = jobs.length ? jobs.map(j => renderJob(j, false)).join('') : '<div class="p-4 text-center text-gray-400 text-sm">Belum ada livestream</div>';
+}
+
+function renderJob(j, isRunning) {
+    const sc = {pending:'gray',scheduled:'yellow',running:'green',finished:'blue',failed:'red',stopped:'gray'}[j.status]||'gray';
+    return `<div class="px-4 py-3 flex items-center justify-between">
+        <div>
+            <div class="text-sm font-medium text-gray-900">${j.title || 'Stream #' + j.id.substring(0,8)}</div>
+            <div class="text-xs text-gray-500">${j.started_at ? new Date(j.started_at).toLocaleString('id-ID') : '-'}</div>
+        </div>
+        <div class="flex items-center gap-2">
+            ${isRunning ? `<span class="text-xs text-gray-500">👁 ${j.viewer_count} • ${j.current_bitrate.toFixed(0)}kbps</span>` : ''}
+            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${sc}-100 text-${sc}-800">${j.status}</span>
+            ${j.status==='running'?`<button onclick="stopLive('${j.id}')" class="text-xs text-red-600 hover:underline">Stop</button>`:''}
+        </div>
+    </div>`;
+}
+
+async function loadChannels() {
+    const r = await fetch('/api/channels');
+    const channels = await r.json();
+    const sel = document.getElementById('live-channel');
+    sel.innerHTML = channels.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+async function loadSources() {
+    const channelId = document.getElementById('live-channel').value;
+    if (!channelId) return;
+    const r = await fetch('/api/livestream/video-sources/' + channelId);
+    const sources = await r.json();
+    const sel = document.getElementById('live-source');
+    sel.innerHTML = sources.map(s => `<option value="${s.file_path}">${s.filename} (${s.asset_type})</option>`).join('');
+}
+
+function showPublishModal() { loadChannels(); showPublishModal; document.getElementById('modal-pub').classList.remove('hidden'); }
+function showScheduleModal() { alert('Schedule: Pilih channel, set waktu mulai'); }
+
+async function publishNow() {
+    const data = {
+        channel_id: document.getElementById('live-channel').value,
+        title: document.getElementById('live-title').value,
+        video_source: document.getElementById('live-source').value,
+        quality: document.getElementById('live-quality').value,
+        duration_hours: parseInt(document.getElementById('live-duration').value),
+        use_mp3: document.getElementById('live-mp3').checked,
+        use_sfx: document.getElementById('live-sfx').checked
+    };
+    const r = await fetch('/api/livestream/publish-now', {
+        method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+    });
+    if (r.ok) {
+        document.getElementById('modal-pub').classList.add('hidden');
+        loadJobs();
+    }
+}
+
+async function stopLive(id) {
+    if (!confirm('Stop livestream ini?')) return;
+    await fetch('/api/livestream/' + id + '/stop', {method:'POST'});
+    loadJobs();
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadJobs(); loadChannels(); });
+document.getElementById('live-channel').addEventListener('change', loadSources);
+setInterval(loadJobs, 10000);
+</script>
+{{end}}

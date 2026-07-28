@@ -1,0 +1,79 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - {{.AppName}}</title>
+    <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/response-targets.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        [x-cloak] { display: none !important; }
+        .htmx-indicator { opacity: 0; transition: opacity 0.3s; }
+        .htmx-request .htmx-indicator { opacity: 1; }
+        .htmx-request.htmx-indicator { opacity: 1; }
+    </style>
+</head>
+<body class="h-full bg-gray-50" hx-ext="response-targets">
+    <div class="min-h-full">
+        {{if .User}}
+        <!-- Navigation -->
+        <nav class="bg-white shadow-sm border-b border-gray-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between h-16">
+                    <div class="flex">
+                        <div class="flex-shrink-0 flex items-center">
+                            <a href="/dashboard" class="text-xl font-bold text-indigo-600">{{.AppName}}</a>
+                        </div>
+                        <div class="hidden sm:ml-6 sm:flex sm:space-x-8">
+                            <a href="/dashboard" class="{{if eq .Active "dashboard"}}border-indigo-500 text-gray-900{{else}}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{{end}} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Dashboard
+                            </a>
+                            <a href="/media" class="{{if eq .Active "media"}}border-indigo-500 text-gray-900{{else}}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{{end}} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Media
+                            </a>
+                            <a href="/pipeline" class="{{if eq .Active "pipeline"}}border-indigo-500 text-gray-900{{else}}border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700{{end}} inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                                Pipeline
+                            </a>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="text-sm text-gray-500">{{.User.Name}}</span>
+                        <a href="/logout" class="text-sm text-gray-500 hover:text-gray-700">Logout</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        {{end}}
+
+        <!-- Main Content -->
+        <main>
+            <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                {{block "content" .}}{{end}}
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast notification area -->
+    <div id="toasts" class="fixed bottom-4 right-4 space-y-2 z-50"></div>
+
+    <script>
+        document.body.addEventListener('htmx:afterRequest', function(evt) {
+            if (evt.detail.failed) {
+                showToast('Error: ' + (evt.detail.xhr.responseText || 'Request failed'), 'error');
+            }
+        });
+        function showToast(message, type) {
+            var toast = document.createElement('div');
+            toast.className = 'px-4 py-3 rounded-lg shadow-lg text-white text-sm transform transition-all duration-300 ' +
+                (type === 'error' ? 'bg-red-500' : 'bg-green-500');
+            toast.textContent = message;
+            document.getElementById('toasts').appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 3000);
+        }
+    </script>
+</body>
+</html>
+{{end}}

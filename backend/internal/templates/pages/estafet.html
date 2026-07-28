@@ -1,0 +1,54 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-xl font-semibold text-gray-900">Control Room</h1>
+
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Auto Production Schedules</h3></div>
+        <div id="schedules" class="divide-y divide-gray-200"></div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Control Room Jobs</h3></div>
+        <div id="cr-jobs" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<script>
+async function loadSchedules() {
+    const channels = await (await fetch('/api/channels')).json();
+    const c = document.getElementById('schedules');
+    if (!channels.length) {
+        c.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">Belum ada channel. Buat channel dulu untuk mengaktifkan auto-schedule.</div>';
+        return;
+    }
+    c.innerHTML = channels.map(ch => `<div class="px-4 py-3 flex items-center justify-between">
+        <div>
+            <div class="text-sm font-medium text-gray-900">${ch.name}</div>
+            <div class="text-xs text-gray-500">Channel #${ch.id}</div>
+        </div>
+        <button onclick="setupSchedule('${ch.id}','${ch.name}')" class="px-3 py-1 text-xs bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100">Setup Schedule</button>
+    </div>`).join('');
+}
+
+async function loadCRJobs() {
+    // Placeholder - would load from API
+    const c = document.getElementById('cr-jobs');
+    c.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">Belum ada control room jobs aktif</div>';
+}
+
+function setupSchedule(channelId, channelName) {
+    const time = prompt(`Set waktu untuk ${channelName} (format: HH:MM, contoh: 08:00)`, '08:00');
+    if (!time) return;
+    const target = prompt('Target (upload_regular/livestream/production_daily):', 'upload_regular');
+    if (!target) return;
+
+    fetch('/api/production/auto-schedule', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({channel_id: channelId, target: target, schedule_time: time + ':00', is_active: true})
+    }).then(() => alert('Schedule saved!'));
+}
+
+document.addEventListener('DOMContentLoaded', () => { loadSchedules(); loadCRJobs(); });
+</script>
+{{end}}

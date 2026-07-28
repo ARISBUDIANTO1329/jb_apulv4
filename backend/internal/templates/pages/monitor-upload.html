@@ -1,0 +1,56 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-xl font-semibold text-gray-900">Upload Monitor</h1>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Pending</div><div class="text-2xl font-bold" id="m-pending">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Uploading</div><div class="text-2xl font-bold text-blue-600" id="m-uploading">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Done</div><div class="text-2xl font-bold text-green-600" id="m-done">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Failed</div><div class="text-2xl font-bold text-red-600" id="m-failed">-</div></div>
+    </div>
+
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Active Uploads</h3></div>
+        <div id="items-list" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<script>
+async function refresh() {
+    const r = await fetch('/api/uploads/items');
+    const items = await r.json();
+    document.getElementById('m-pending').textContent = items.filter(i => i.status === 'pending').length;
+    document.getElementById('m-uploading').textContent = items.filter(i => i.status === 'processing').length;
+    document.getElementById('m-done').textContent = items.filter(i => i.status === 'done').length;
+    document.getElementById('m-failed').textContent = items.filter(i => i.status === 'failed').length;
+
+    const c = document.getElementById('items-list');
+    if (!items.length) {
+        c.innerHTML = '<div class="p-8 text-center text-gray-400">Tidak ada upload aktif</div>';
+        return;
+    }
+    c.innerHTML = items.slice(0,20).map(i => {
+        const sc = {pending:'gray',processing:'blue',done:'green',failed:'red'}[i.status]||'gray';
+        return `<div class="px-4 py-3 flex items-center justify-between">
+            <div>
+                <div class="text-sm font-medium text-gray-900">${i.title || 'Item #' + i.id.substring(0,8)}</div>
+                <div class="text-xs text-gray-500">${i.youtube_video_id || '-'}</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-20 bg-gray-200 rounded-full h-2"><div class="bg-${sc}-500 h-2 rounded-full" style="width:${i.progress}%"></div></div>
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${sc}-100 text-${sc}-800">${i.status}</span>
+                ${i.status==='failed'?`<button onclick="retryItem('${i.id}')" class="text-xs text-blue-600 hover:underline">Retry</button>`:''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function retryItem(id) {
+    await fetch('/api/uploads/' + id + '/retry', {method:'POST'});
+    refresh();
+}
+
+document.addEventListener('DOMContentLoaded', refresh);
+setInterval(refresh, 10000);
+</script>
+{{end}}

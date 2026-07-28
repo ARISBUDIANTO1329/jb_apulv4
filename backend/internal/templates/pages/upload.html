@@ -1,0 +1,37 @@
+{{define "content"}}
+<div class="max-w-lg mx-auto">
+    <h1 class="text-2xl font-semibold text-gray-900 mb-6">Upload Media</h1>
+
+    <form hx-post="/media/upload" hx-encoding="multipart/form-data" hx-target="#upload-status" hx-indicator="#upload-progress"
+          class="bg-white shadow rounded-lg p-6 space-y-4">
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-500 transition-colors"
+             x-data="{dragging: false}"
+             x-on:dragover.prevent="dragging = true"
+             x-on:dragleave.prevent="dragging = false"
+             x-on:drop.prevent="dragging = false; $refs.fileInput.files = $event.dataTransfer.files">
+
+            <label for="file" class="cursor-pointer">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p class="mt-2 text-sm text-gray-600">Drop files here or click to upload</p>
+                <p class="text-xs text-gray-500">MP4, AVI, MOV up to 500MB</p>
+                <input id="file" name="file" type="file" x-ref="fileInput" class="hidden" accept="video/*,audio/*,image/*">
+            </label>
+        </div>
+
+        <div id="upload-progress" class="htmx-indicator">
+            <div class="bg-gray-200 rounded-full h-2">
+                <div class="bg-indigo-600 h-2 rounded-full animate-pulse" style="width: 100%"></div>
+            </div>
+            <p class="text-sm text-gray-500 mt-1 text-center">Uploading...</p>
+        </div>
+
+        <div id="upload-status"></div>
+
+        <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+            Upload
+        </button>
+    </form>
+</div>
+{{end}}

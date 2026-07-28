@@ -1,0 +1,41 @@
+{{define "content"}}
+<div class="space-y-6">
+    <h1 class="text-xl font-semibold text-gray-900">Livestream Monitor</h1>
+
+    <div id="live-cards" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+</div>
+
+<script>
+async function refresh() {
+    const r = await fetch('/api/livestream/monitor');
+    const jobs = await r.json();
+    const c = document.getElementById('live-cards');
+    if (!jobs.length) {
+        c.innerHTML = '<div class="col-span-full text-center py-12 text-gray-400">Tidak ada livestream aktif</div>';
+        return;
+    }
+    c.innerHTML = jobs.map(j => {
+        const sc = {running:'green',scheduled:'yellow',finished:'blue',failed:'red',stopped:'gray'}[j.status]||'gray';
+        const elapsed = j.started_at ? Math.floor((Date.now() - new Date(j.started_at))/60000) : 0;
+        return `<div class="bg-white shadow rounded-lg p-4 border-l-4 border-${sc}-500">
+            <div class="flex items-center justify-between mb-2">
+                <div class="text-sm font-bold text-gray-900">${j.title || 'Stream'}</div>
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${sc}-100 text-${sc}-800">${j.status}</span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 mb-3">
+                <div class="text-center p-2 rounded bg-gray-50"><div class="text-xs text-gray-500">Viewers</div><div class="font-bold">${j.viewer_count}</div></div>
+                <div class="text-center p-2 rounded bg-gray-50"><div class="text-xs text-gray-500">Bitrate</div><div class="font-bold">${(j.current_bitrate||0).toFixed(0)}k</div></div>
+                <div class="text-center p-2 rounded bg-gray-50"><div class="text-xs text-gray-500">FPS</div><div class="font-bold">${(j.current_fps||0).toFixed(1)}</div></div>
+                <div class="text-center p-2 rounded bg-gray-50"><div class="text-xs text-gray-500">Dropped</div><div class="font-bold">${j.frame_drop_count}</div></div>
+            </div>
+            <div class="text-xs text-gray-500">
+                ${j.started_at ? `Running ${elapsed} min` : ''} • Reconnect: ${j.reconnect_count}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', refresh);
+setInterval(refresh, 10000);
+</script>
+{{end}}

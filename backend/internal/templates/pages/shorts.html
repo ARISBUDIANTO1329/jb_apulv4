@@ -1,0 +1,68 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-gray-900">Shorts</h1>
+    </div>
+
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Shorts Jobs</h3></div>
+        <div id="shorts-jobs" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<script>
+async function loadJobs() {
+    const r = await fetch('/api/shorts');
+    const jobs = await r.json();
+    const c = document.getElementById('shorts-jobs');
+    if (!jobs.length) {
+        c.innerHTML = '<div class="p-8 text-center text-gray-400">Belum ada shorts job. Shorts otomatis dibuat dari upload yang selesai.</div>';
+        return;
+    }
+    c.innerHTML = jobs.map(j => {
+        const sc = {created:'gray',generating:'blue',ready:'green',uploading:'blue',completed:'green',failed:'red'}[j.status]||'gray';
+        return `<div class="px-4 py-3">
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <div class="text-sm font-medium text-gray-900">${j.long_title || 'Shorts #' + j.id.substring(0,8)}</div>
+                    <div class="text-xs text-gray-500">${j.short_count} shorts • ${j.short_duration}s each</div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${sc}-100 text-${sc}-800">${j.status}</span>
+                    ${j.status==='failed'?`<button onclick="retryJob('${j.id}')" class="text-xs text-blue-600 hover:underline">Retry</button>`:''}
+                </div>
+            </div>
+            <div id="items-${j.id}" class="ml-4"></div>
+        </div>`;
+    }).join('');
+
+    // Load items for each job
+    jobs.forEach(j => loadItems(j.id));
+}
+
+async function loadItems(jobId) {
+    const r = await fetch('/api/shorts/' + jobId);
+    const data = await r.json();
+    const c = document.getElementById('items-' + jobId);
+    if (!data.items || !data.items.length) return;
+    c.innerHTML = data.items.map(i => {
+        const sc = {pending:'gray',generated:'blue',uploading:'blue',uploaded:'green',failed:'red'}[i.status]||'gray';
+        return `<div class="flex items-center justify-between py-1 text-sm">
+            <span class="text-gray-600">Short #${i.short_number}: ${i.title}</span>
+            <div class="flex items-center gap-2">
+                ${i.youtube_id ? `<a href="https://youtube.com/shorts/${i.youtube_id}" target="_blank" class="text-xs text-blue-600 hover:underline">📺 ${i.youtube_id}</a>` : ''}
+                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-${sc}-100 text-${sc}-800">${i.status}</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function retryJob(id) {
+    await fetch('/api/shorts/' + id + '/retry', {method:'POST'});
+    loadJobs();
+}
+
+document.addEventListener('DOMContentLoaded', loadJobs);
+setInterval(loadJobs, 30000);
+</script>
+{{end}}

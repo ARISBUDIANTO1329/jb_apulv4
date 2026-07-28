@@ -1,0 +1,85 @@
+{{define "content"}}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-gray-900">Uploads</h1>
+        <div class="flex gap-2">
+            <button onclick="showTitleBank()" class="px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">Title Bank</button>
+            <button onclick="showClipBoard()" class="px-3 py-2 text-sm bg-gray-100 rounded-lg hover:bg-gray-200">Clipboard</button>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Pending</div><div class="text-2xl font-bold" id="up-pending">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Processing</div><div class="text-2xl font-bold text-blue-600" id="up-processing">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Done</div><div class="text-2xl font-bold text-green-600" id="up-done">-</div></div>
+        <div class="bg-white shadow rounded-lg p-4"><div class="text-xs text-gray-500">Failed</div><div class="text-2xl font-bold text-red-600" id="up-failed">-</div></div>
+    </div>
+
+    <!-- Upload Ready Files -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Upload Ready Files</h3></div>
+        <div id="upload-ready" class="divide-y divide-gray-200"></div>
+    </div>
+
+    <!-- Batches -->
+    <div class="bg-white shadow rounded-lg">
+        <div class="px-4 py-3 border-b border-gray-200"><h3 class="text-sm font-medium text-gray-700">Upload Batches</h3></div>
+        <div id="batches" class="divide-y divide-gray-200"></div>
+    </div>
+</div>
+
+<script>
+async function loadStats() {
+    const r = await fetch('/api/uploads/stats');
+    const d = await r.json();
+    document.getElementById('up-pending').textContent = d.pending || 0;
+    document.getElementById('up-processing').textContent = d.processing || 0;
+    document.getElementById('up-done').textContent = d.done || 0;
+    document.getElementById('up-failed').textContent = d.failed || 0;
+}
+
+async function loadUploadReady() {
+    const r = await fetch('/api/uploads/upload-ready');
+    const files = await r.json();
+    const c = document.getElementById('upload-ready');
+    if (!files.length) {
+        c.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">Belum ada file upload ready</div>';
+        return;
+    }
+    c.innerHTML = files.map(f => `<div class="px-4 py-3 flex items-center justify-between">
+        <div>
+            <div class="text-sm font-medium text-gray-900">${f.filename || f.original_name}</div>
+            <div class="text-xs text-gray-500">${(f.file_size/1024/1024).toFixed(1)}MB</div>
+        </div>
+        <button class="px-3 py-1 text-xs bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100">Upload</button>
+    </div>`).join('');
+}
+
+async function loadBatches() {
+    const r = await fetch('/api/uploads');
+    const batches = await r.json();
+    const c = document.getElementById('batches');
+    if (!batches.length) {
+        c.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">Belum ada upload batch</div>';
+        return;
+    }
+    c.innerHTML = batches.map(b => {
+        const statusColor = {pending:'gray',processing:'blue',done:'green',failed:'red'}[b.status] || 'gray';
+        return `<div class="px-4 py-3 flex items-center justify-between">
+            <div>
+                <div class="text-sm font-medium text-gray-900">${b.name || 'Batch #' + b.id.substring(0,8)}</div>
+                <div class="text-xs text-gray-500">${b.done_items}/${b.total_items} items</div>
+            </div>
+            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-${statusColor}-100 text-${statusColor}-800">${b.status}</span>
+        </div>`;
+    }).join('');
+}
+
+function showTitleBank() { alert('Title Bank: Fitur ini akan tersedia setelah channel memiliki title pool'); }
+function showClipBoard() { alert('Clipboard: Fitur ini akan tersedia untuk description dan tags'); }
+
+document.addEventListener('DOMContentLoaded', () => { loadStats(); loadUploadReady(); loadBatches(); });
+setInterval(loadStats, 15000);
+</script>
+{{end}}
