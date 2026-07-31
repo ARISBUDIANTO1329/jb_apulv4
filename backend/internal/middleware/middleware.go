@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 
 	"github.com/jbapul/jb_apulv4/internal/models"
@@ -10,7 +12,8 @@ import (
 type contextKey string
 
 const (
-	UserKey contextKey = "user"
+	UserKey       contextKey = "user"
+	CSRFTokenKey  contextKey = "csrf_token"
 )
 
 func GetUser(r *http.Request) *models.User {
@@ -46,4 +49,67 @@ func RequireAdmin(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// CSRFProtection implements double-submit cookie pattern for state-changing requests.
+// Safe methods (GET, HEAD, OPTIONS) are skipped.
+// The token is set as a cookie and must be echoed back in the X-CSRF-Token header.
+func CSRFProtection(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip safe methods
+		if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+			// Ensure cookie exists for GET requests so client can read it
+			cookie, err := r.Cookie("csrf_token")
+			if err != nil || cookie.Value == "" {
+				token := generateCSRFToken()
+				http.SetCookie(w, &http.Cookie{
+					Name:     "csrf_token",
+					Value:    token,
+					Path:     "/",
+					HttpOnly: false, // JS needs to read this
+					SameSite: http.SameSiteLaxMode,
+					MaxAge:   86400,
+				})
+				ctx := context.WithValue(r.Context(), CSRFTokenKey, token)
+				r = r.WithContext(ctx)
+			} else {
+				ctx := context.WithValue(r.Context(), CSRFTokenKey, cookie.Value)
+				r = r.WithContext(ctx)
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// For state-changing methods, validate CSRF token
+		cookie, err := r.Cookie("csrf_token")
+		if err != nil || cookie.Value == "" {
+			http.Error(w, "CSRF token missing", http.StatusForbidden)
+			return
+		}
+
+		headerToken := r.Header.Get("X-CSRF-Token")
+		if headerToken == "" {
+			// Also check form value as fallback for HTMX form submissions
+			headerToken = r.FormValue("csrf_token")
+		}
+
+		if headerToken == "" || headerToken != cookie.Value {
+			http.Error(w, "CSRF token invalid", http.StatusForbidden)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func generateCSRFToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// CSRFToken returns the CSRF token from the request context (for use in templates).
+func CSRFToken(r *http.Request) string {
+	token, _ := r.Context().Value(CSRFTokenKey).(string)
+	return token
 }

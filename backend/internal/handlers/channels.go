@@ -96,18 +96,46 @@ func (h *ChannelHandler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(c)
 }
 
+// allowedChannelColumns is the allowlist of columns that can be updated via the API.
+var allowedChannelColumns = map[string]bool{
+	"name":              true,
+	"youtube_channel_id": true,
+	"youtube_channel_url": true,
+	"niche":             true,
+	"description":       true,
+	"email":             true,
+	"status":            true,
+	"token_status":      true,
+	"token_error":       true,
+	"token_checked_at":  true,
+	"token_expires_at":  true,
+	"stream_key":        true,
+	"proxy_host":        true,
+	"proxy_port":        true,
+	"proxy_type":        true,
+	"subscriber_count":  true,
+	"total_views":       true,
+	"video_count":       true,
+	"notes":             true,
+	"last_upload":       true,
+	"last_livestream":   true,
+}
+
 func (h *ChannelHandler) Update(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "id")
 	id, _ := strconv.Atoi(idStr)
 	var input map[string]interface{}
-	json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
-	// Build SET clause
+	// Build SET clause with allowlisted columns only
 	setClause := ""
 	args := []interface{}{}
 	i := 1
 	for k, v := range input {
-		if k == "id" || k == "user_id" || k == "created_at" {
+		if !allowedChannelColumns[k] {
 			continue
 		}
 		if setClause != "" {
@@ -116,6 +144,10 @@ func (h *ChannelHandler) Update(w http.ResponseWriter, r *http.Request) {
 		setClause += fmt.Sprintf("%s = $%d", k, i)
 		args = append(args, v)
 		i++
+	}
+	if setClause == "" {
+		http.Error(w, "No valid fields to update", http.StatusBadRequest)
+		return
 	}
 	args = append(args, id)
 	_, err := h.DB.Exec(r.Context(),

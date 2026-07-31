@@ -4,9 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jbapul/jb_apulv4/internal/config"
@@ -20,7 +25,10 @@ type AuthHandler struct {
 	Cfg *config.Config
 }
 
+var cfgRef *config.Config
+
 func NewAuthHandler(db *pgxpool.Pool, cfg *config.Config) *AuthHandler {
+	cfgRef = cfg
 	return &AuthHandler{DB: db, Cfg: cfg}
 }
 
@@ -134,15 +142,117 @@ type googleUserInfo struct {
 }
 
 func (h *AuthHandler) exchangeGoogleCode(ctx context.Context, code string) (*googleTokenResponse, error) {
-	return &googleTokenResponse{}, fmt.Errorf("not implemented")
+	data := url.Values{}
+	data.Set("code", code)
+	data.Set("client_id", h.Cfg.GoogleClientID)
+	data.Set("client_secret", h.Cfg.GoogleClientSecret)
+	data.Set("redirect_uri", h.Cfg.GoogleRedirectURI)
+	data.Set("grant_type", "authorization_code")
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://oauth2.googleapis.com/token", strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("token request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("token exchange failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResp googleTokenResponse
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, fmt.Errorf("parse token: %w", err)
+	}
+	return &tokenResp, nil
 }
 
 func (h *AuthHandler) getGoogleUserInfo(ctx context.Context, accessToken string) (*googleUserInfo, error) {
-	return &googleUserInfo{}, fmt.Errorf("not implemented")
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("userinfo request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("userinfo failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var info googleUserInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return nil, fmt.Errorf("parse userinfo: %w", err)
+	}
+	return &info, nil
 }
 
 func (h *AuthHandler) upsertGoogleUser(ctx context.Context, info *googleUserInfo) (*models.User, error) {
-	return &models.User{}, nil
+	var user models.User
+	err := h.DB.QueryRow(ctx,
+		`SELECT id, email, name, avatar_url, role, created_at, updated_at
+		 FROM users WHERE google_id = $1`, info.ID,
+	).Scan(&user.ID, &user.Email, &user.Name, &user.AvatarURL, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+
+	if err != nil {
+		// Not found by google_id, try by email
+		err = h.DB.QueryRow(ctx,
+			`SELECT id, email, name, avatar_url, role, created_at, updated_at
+			 FROM users WHERE email = $1`, info.Email,
+		).Scan(&user.ID, &user.Email, &user.Name, &user.AvatarURL, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+
+		if err != nil {
+			// Create new user
+			err = h.DB.QueryRow(ctx,
+				`INSERT INTO users (email, name, avatar_url, google_id, role, is_active, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4, 'user', true, NOW(), NOW())
+				 RETURNING id, email, name, avatar_url, role, created_at, updated_at`,
+				info.Email, info.Name, info.Picture, info.ID,
+			).Scan(&user.ID, &user.Email, &user.Name, &user.AvatarURL, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+			if err != nil {
+				return nil, fmt.Errorf("create user: %w", err)
+			}
+			return &user, nil
+		}
+
+		// Link google_id to existing email account
+		_, err = h.DB.Exec(ctx,
+			`UPDATE users SET google_id = $1, avatar_url = COALESCE(NULLIF($2,''), avatar_url), updated_at = NOW() WHERE id = $3`,
+			info.ID, info.Picture, user.ID)
+		if err != nil {
+			return nil, fmt.Errorf("link google_id: %w", err)
+		}
+		user.AvatarURL = info.Picture
+		return &user, nil
+	}
+
+	// Update avatar if changed
+	if info.Picture != "" && info.Picture != user.AvatarURL {
+		h.DB.Exec(ctx, `UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2`, info.Picture, user.ID)
+		user.AvatarURL = info.Picture
+	}
+	return &user, nil
 }
 
 func generateState() string {
@@ -165,12 +275,16 @@ func setSession(w http.ResponseWriter, r *http.Request, user *models.User) {
 		return
 	}
 
+	isSecure := false
+	if cfgRef != nil && cfgRef.Env == "production" {
+		isSecure = true
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   isSecure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   86400,
 	})

@@ -223,15 +223,51 @@ func (h *LivestreamHandler) Get(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(j)
 }
 
+// allowedLiveJobColumns is the allowlist of columns that can be updated via the API.
+var allowedLiveJobColumns = map[string]bool{
+	"channel_id":          true,
+	"title":               true,
+	"description":         true,
+	"tags":                true,
+	"video_source":        true,
+	"use_mp3":             true,
+	"use_sfx":             true,
+	"stream_key":          true,
+	"broadcast_id":        true,
+	"quality":             true,
+	"visibility":          true,
+	"duration_hours":      true,
+	"made_for_kids":       true,
+	"thumbnail_path":      true,
+	"status":              true,
+	"start_at_utc":        true,
+	"end_at_utc":          true,
+	"stop_requested":      true,
+	"error_message":       true,
+	"error_category":      true,
+	"reconnect_count":     true,
+	"viewer_count":        true,
+	"current_bitrate":     true,
+	"current_fps":         true,
+	"frame_drop_count":    true,
+	"stream_stats":        true,
+	"process_id":          true,
+	"retry_count":         true,
+	"max_retries":         true,
+}
+
 func (h *LivestreamHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	var input map[string]interface{}
-	json.NewDecoder(r.Body).Decode(&input)
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 	setClause := ""
 	args := []interface{}{}
 	i := 1
 	for k, v := range input {
-		if k == "id" || k == "user_id" || k == "created_at" {
+		if !allowedLiveJobColumns[k] {
 			continue
 		}
 		if setClause != "" {
@@ -241,8 +277,16 @@ func (h *LivestreamHandler) Update(w http.ResponseWriter, r *http.Request) {
 		args = append(args, v)
 		i++
 	}
+	if setClause == "" {
+		http.Error(w, "No valid fields to update", http.StatusBadRequest)
+		return
+	}
 	args = append(args, id)
-	h.DB.Exec(r.Context(), fmt.Sprintf("UPDATE live_jobs SET %s, updated_at = NOW() WHERE id = $%d", setClause, i), args...)
+	_, err := h.DB.Exec(r.Context(), fmt.Sprintf("UPDATE live_jobs SET %s, updated_at = NOW() WHERE id = $%d", setClause, i), args...)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 

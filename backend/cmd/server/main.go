@@ -102,6 +102,7 @@ func main() {
 	// Protected routes
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireAuth)
+		r.Use(middleware.CSRFProtection)
 
 		// HTML Pages
 		r.Get("/", dashH.Dashboard)

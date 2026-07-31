@@ -36,3 +36,5 @@ redis_data/
 
 # Logs
 *.log
+*.bak
+backend/server
