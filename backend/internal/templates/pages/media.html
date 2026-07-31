@@ -8,7 +8,7 @@
         <div class="flex items-center gap-2">
             <select x-model="currentChannel" @change="loadStats(); loadFiles()" class="px-3 py-2 border rounded-lg text-sm">
                 <option value="">Pilih Channel</option>
-                <template x-for="ch in channels" :key="ch.id"><option :value="ch.id">#<span x-text="ch.id"></span> - <span x-text="ch.name"></span></option></template>
+                <template x-for="ch in channels" :key="ch.ID || ch.id"><option :value="ch.ID || ch.id">#<span x-text="ch.ID || ch.id"></span> - <span x-text="ch.Name || ch.name"></span></option></template>
             </select>
         </div>
     </div>
@@ -160,7 +160,6 @@
                 </div>
                 <video x-show="preview.mime && preview.mime.startsWith('video') && !preview.loading && !preview.error"
                     x-ref="previewVideo"
-                    :src="'/api/media/stream/' + preview.id"
                     @loadstart="preview.loading=true; preview.error=''"
                     @canplay="preview.loading=false"
                     @error="onPreviewError($event)"
@@ -168,13 +167,13 @@
                     controls
                     class="max-w-full max-h-[70vh]"></video>
                 <audio x-show="preview.mime && preview.mime.startsWith('audio') && !preview.error"
-                    :src="'/api/media/stream/' + preview.id"
+                    x-ref="previewAudio"
                     @error="onPreviewError($event)"
                     preload="metadata"
                     controls
                     class="w-full"></audio>
                 <img x-show="preview.mime && preview.mime.startsWith('image') && !preview.error"
-                    :src="'/api/media/preview/' + preview.id"
+                    x-ref="previewImage"
                     @error="onPreviewError($event)"
                     class="max-w-full max-h-[70vh]">
             </div>
@@ -190,7 +189,7 @@ const SSR_GROUPS = {{.GroupsJSON | safeHTML}};
 function mediaPage() {
     return {
         channels: SSR_CHANNELS || [],
-        currentChannel: (SSR_CHANNELS && SSR_CHANNELS.length > 0) ? SSR_CHANNELS[0].ID : '',
+        currentChannel: (SSR_CHANNELS && SSR_CHANNELS.length > 0) ? (SSR_CHANNELS[0].ID || SSR_CHANNELS[0].id || '') : '',
         groups: SSR_GROUPS || [],
         stats: {},
         currentGroup: '',
@@ -208,10 +207,11 @@ function mediaPage() {
         worker: null,
         alert: { show: false, msg: '', type: 'info' },
         preview: { show: false, id: '', name: '', type: '', size: '', mime: '', loading: false, error: '' },
+        previewUrl: '',
 
         get channelLabel() {
-            const ch = this.channels.find(c => c.id == this.currentChannel);
-            return ch ? `#${ch.id} • ${ch.name} • ${ch.niche || '-'}` : 'Pilih channel';
+            const ch = this.channels.find(c => (c.ID || c.id) == this.currentChannel);
+            return ch ? `#${ch.ID || ch.id} • ${ch.Name || ch.name} • ${ch.Niche || ch.niche || '-'}` : 'Pilih channel';
         },
 
         async init() {
@@ -225,7 +225,7 @@ function mediaPage() {
                 try { this.groups = JSON.parse(this.groups); } catch(e) {}
             }
             if (this.channels.length && !this.currentChannel) {
-                this.currentChannel = this.channels[0].ID || this.channels[0].id;
+                this.currentChannel = this.channels[0].ID || this.channels[0].id || '';
             }
             if (this.currentChannel) {
                 await this.loadStats();
@@ -332,12 +332,31 @@ function mediaPage() {
 
         previewFile(f) {
             this.preview = { show: true, id: f.id, name: f.original_name || f.filename, type: f.asset_type, size: this.formatSize(f.file_size), mime: f.mime, loading: true, error: '' };
+            // Set media src imperatively AFTER Alpine renders the modal
+            this.$nextTick(() => {
+                const url = '/api/media/stream/' + f.id;
+                const imgUrl = '/api/media/preview/' + f.id;
+                if (f.mime && f.mime.startsWith('video')) {
+                    const el = this.$refs.previewVideo;
+                    if (el) { el.src = url; el.load(); }
+                } else if (f.mime && f.mime.startsWith('audio')) {
+                    const el = this.$refs.previewAudio;
+                    if (el) { el.src = url; el.load(); }
+                } else if (f.mime && f.mime.startsWith('image')) {
+                    const el = this.$refs.previewImage;
+                    if (el) { el.src = imgUrl; }
+                }
+            });
         },
 
         closePreview() {
-            // Stop video/audio playback before closing
-            const vid = this.$refs.previewVideo;
-            if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); }
+            // Stop all media playback before closing
+            ['previewVideo', 'previewAudio'].forEach(ref => {
+                const el = this.$refs[ref];
+                if (el) { el.pause(); el.removeAttribute('src'); el.load(); }
+            });
+            const img = this.$refs.previewImage;
+            if (img) { img.removeAttribute('src'); }
             this.preview = { show: false, id: '', name: '', type: '', size: '', mime: '', loading: false, error: '' };
         },
 
