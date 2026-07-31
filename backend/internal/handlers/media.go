@@ -51,6 +51,23 @@ var groupMeta = []struct {
 
 var safeNameRe = regexp.MustCompile(`[^\w.\-]`)
 
+// detectMIME returns a MIME type based on file extension.
+// Used as fallback when browser sends generic Content-Type like application/octet-stream.
+func detectMIME(ext string) string {
+	m := map[string]string{
+		".mp4": "video/mp4", ".mkv": "video/x-matroska", ".webm": "video/webm",
+		".mov": "video/quicktime", ".avi": "video/x-msvideo",
+		".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".flac": "audio/flac",
+		".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+		".gif": "image/gif", ".webp": "image/webp",
+		".txt": "text/plain", ".json": "application/json", ".csv": "text/csv", ".md": "text/markdown",
+	}
+	if v, ok := m[strings.ToLower(ext)]; ok {
+		return v
+	}
+	return "application/octet-stream"
+}
+
 func (h *MediaHandler) ListGroups(w http.ResponseWriter, r *http.Request) {
 	result := []map[string]string{}
 	for _, g := range groupMeta {
@@ -215,6 +232,10 @@ func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mime := header.Header.Get("Content-Type")
+	// Use server-side detection if browser sent generic type
+	if mime == "" || mime == "application/octet-stream" {
+		mime = detectMIME(ext)
+	}
 	itemID := uuid.New().String()
 
 	_, err = h.DB.Exec(r.Context(),
@@ -300,12 +321,16 @@ func (h *MediaHandler) Stream(w http.ResponseWriter, r *http.Request) {
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		http.Error(w, "Error", http.StatusInternalServerError)
+		http.Error(w, "File not found", http.StatusNotFound)
 		return
 	}
 	defer f.Close()
 
-	stat, _ := f.Stat()
+	stat, err := f.Stat()
+	if err != nil {
+		http.Error(w, "File error", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("Accept-Ranges", "bytes")
 

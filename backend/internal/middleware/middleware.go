@@ -33,6 +33,12 @@ func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user := GetUser(r)
 		if user == nil {
+			// API routes return 401 JSON, page routes redirect to login
+			if len(r.URL.Path) >= 4 && r.URL.Path[:4] == "/api" {
+				w.Header().Set("Content-Type", "application/json")
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}

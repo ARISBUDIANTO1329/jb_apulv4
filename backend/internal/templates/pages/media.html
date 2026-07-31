@@ -134,7 +134,7 @@
     </div>
 
     <!-- Preview Modal -->
-    <div x-show="preview.show" x-transition class="fixed inset-0 z-50" @click.self="preview.show=false">
+    <div x-show="preview.show" x-transition class="fixed inset-0 z-50" @click.self="closePreview()" @keydown.escape.window="closePreview()">
         <div class="absolute inset-0 bg-black bg-opacity-75"></div>
         <div class="relative max-w-4xl mx-auto mt-10 bg-white rounded-xl shadow-xl overflow-hidden" @click.stop>
             <div class="flex items-center justify-between p-4 border-b">
@@ -144,7 +144,7 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <a :href="'/api/media/download/' + preview.id" class="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">Download</a>
-                    <button @click="preview.show=false" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">✕ Close</button>
+                    <button @click="closePreview()" class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">✕ Close</button>
                 </div>
             </div>
             <div class="p-4 flex items-center justify-center bg-black min-h-[300px]">
@@ -152,21 +152,30 @@
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>
                     <div>Loading video...</div>
                 </div>
-                <video x-show="preview.mime && preview.mime.startsWith('video') && !preview.loading"
+                <div x-show="preview.error" class="text-center">
+                    <div class="text-red-400 text-4xl mb-2">⚠️</div>
+                    <div class="text-white font-medium" x-text="preview.error"></div>
+                    <div class="text-gray-400 text-sm mt-1">File mungkin memerlukan autentisasi atau format tidak didukung</div>
+                    <a :href="'/api/media/download/' + preview.id" class="inline-block mt-3 px-4 py-2 bg-gray-700 text-white text-sm rounded hover:bg-gray-600">Download sebagai gantinya</a>
+                </div>
+                <video x-show="preview.mime && preview.mime.startsWith('video') && !preview.loading && !preview.error"
+                    x-ref="previewVideo"
                     :src="'/api/media/stream/' + preview.id"
-                    @loadstart="preview.loading=true"
+                    @loadstart="preview.loading=true; preview.error=''"
                     @canplay="preview.loading=false"
-                    @error="preview.loading=false"
+                    @error="onPreviewError($event)"
                     preload="metadata"
                     controls
                     class="max-w-full max-h-[70vh]"></video>
-                <audio x-show="preview.mime && preview.mime.startsWith('audio')"
+                <audio x-show="preview.mime && preview.mime.startsWith('audio') && !preview.error"
                     :src="'/api/media/stream/' + preview.id"
+                    @error="onPreviewError($event)"
                     preload="metadata"
                     controls
                     class="w-full"></audio>
-                <img x-show="preview.mime && preview.mime.startsWith('image')"
+                <img x-show="preview.mime && preview.mime.startsWith('image') && !preview.error"
                     :src="'/api/media/preview/' + preview.id"
+                    @error="onPreviewError($event)"
                     class="max-w-full max-h-[70vh]">
             </div>
         </div>
@@ -198,7 +207,7 @@ function mediaPage() {
         bgUploads: [],
         worker: null,
         alert: { show: false, msg: '', type: 'info' },
-        preview: { show: false, id: '', name: '', type: '', size: '', mime: '', loading: false },
+        preview: { show: false, id: '', name: '', type: '', size: '', mime: '', loading: false, error: '' },
 
         get channelLabel() {
             const ch = this.channels.find(c => c.id == this.currentChannel);
@@ -322,7 +331,29 @@ function mediaPage() {
         },
 
         previewFile(f) {
-            this.preview = { show: true, id: f.id, name: f.original_name || f.filename, type: f.asset_type, size: this.formatSize(f.file_size), mime: f.mime };
+            this.preview = { show: true, id: f.id, name: f.original_name || f.filename, type: f.asset_type, size: this.formatSize(f.file_size), mime: f.mime, loading: true, error: '' };
+        },
+
+        closePreview() {
+            // Stop video/audio playback before closing
+            const vid = this.$refs.previewVideo;
+            if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); }
+            this.preview = { show: false, id: '', name: '', type: '', size: '', mime: '', loading: false, error: '' };
+        },
+
+        onPreviewError(e) {
+            this.preview.loading = false;
+            const media = e.target;
+            let msg = 'Gagal memuat media';
+            if (media.error) {
+                switch (media.error.code) {
+                    case MediaError.MEDIA_ERR_ABORTED: msg = 'Pemuatan dibatalkan'; break;
+                    case MediaError.MEDIA_ERR_NETWORK: msg = 'Error jaringan'; break;
+                    case MediaError.MEDIA_ERR_DECODE: msg = 'Format tidak dapat diputar'; break;
+                    case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED: msg = 'Format tidak didukung atau akses ditolak'; break;
+                }
+            }
+            this.preview.error = msg;
         },
 
         onFileSelect(e) {
