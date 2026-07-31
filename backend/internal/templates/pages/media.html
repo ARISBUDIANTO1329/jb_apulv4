@@ -134,7 +134,7 @@
     </div>
 
     <!-- Preview Modal -->
-    <div x-show="preview.show" x-transition class="fixed inset-0 z-50" @click.self="closePreview()" @keydown.escape.window="closePreview()">
+    <div x-show="preview.show" x-cloak x-transition class="fixed inset-0 z-50" @click.self="closePreview()" @keydown.escape.window="closePreview()">
         <div class="absolute inset-0 bg-black bg-opacity-75"></div>
         <div class="relative max-w-4xl mx-auto mt-10 bg-white rounded-xl shadow-xl overflow-hidden" @click.stop>
             <div class="flex items-center justify-between p-4 border-b">
