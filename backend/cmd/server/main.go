@@ -93,6 +93,11 @@ func main() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("OK")) })
 	r.Get("/api/system/stats", dashH.SystemStats)
 
+	// JSON Auth API (for React frontend)
+	r.Post("/api/auth/login", authH.APILogin)
+	r.Post("/api/auth/logout", authH.APILogout)
+	r.Get("/api/auth/me", authH.APIMe)
+
 	r.Get("/login", authH.LoginPage)
 	r.Post("/login", authH.Login)
 	r.Get("/logout", authH.Logout)

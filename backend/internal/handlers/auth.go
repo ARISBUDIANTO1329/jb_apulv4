@@ -32,6 +32,116 @@ func NewAuthHandler(db *pgxpool.Pool, cfg *config.Config) *AuthHandler {
 	return &AuthHandler{DB: db, Cfg: cfg}
 }
 
+func (h *AuthHandler) APILogin(w http.ResponseWriter, r *http.Request) {
+	// Support both JSON and form
+	var email, password string
+	contentType := r.Header.Get("Content-Type")
+	if strings.Contains(contentType, "application/json") {
+		var body struct {
+			Email    string `json:"email"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":"Invalid JSON"}`))
+			return
+		}
+		email = body.Email
+		password = body.Password
+	} else {
+		if err := r.ParseForm(); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":"Invalid form"}`))
+			return
+		}
+		email = r.FormValue("email")
+		password = r.FormValue("password")
+	}
+
+	if email == "" || password == "" {
+		http.Error(w, `{"error":"Email and password required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var user models.User
+	var passwordHash string
+	err := h.DB.QueryRow(r.Context(),
+		"SELECT id, email, name, avatar_url, password_hash, role, created_at, updated_at FROM users WHERE email = $1",
+		email,
+	).Scan(&user.ID, &user.Email, &user.Name, &user.AvatarURL, &passwordHash, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"Invalid credentials"}`))
+		return
+	}
+
+	if passwordHash != "" {
+		if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"Invalid credentials"}`))
+			return
+		}
+	}
+
+	setSession(w, r, &user)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"user": map[string]interface{}{
+			"id":       user.ID,
+			"email":    user.Email,
+			"name":     user.Name,
+			"avatar":   user.AvatarURL,
+			"role":     user.Role,
+		},
+	})
+}
+
+func (h *AuthHandler) APILogout(w http.ResponseWriter, r *http.Request) {
+	clearSession(w, r)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"ok":true}`))
+}
+
+func (h *AuthHandler) APIMe(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil || cookie.Value == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"Not authenticated"}`))
+		return
+	}
+
+	var user models.User
+	err = h.DB.QueryRow(r.Context(),
+		"SELECT u.id, u.email, u.name, u.avatar_url, u.role, u.created_at, u.updated_at FROM users u JOIN sessions s ON u.id = s.user_id WHERE s.id = $1 AND s.expires_at > NOW()",
+		cookie.Value,
+	).Scan(&user.ID, &user.Email, &user.Name, &user.AvatarURL, &user.Role, &user.CreatedAt, &user.UpdatedAt)
+
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"Invalid session"}`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"user": map[string]interface{}{
+			"id":       user.ID,
+			"email":    user.Email,
+			"name":     user.Name,
+			"avatar":   user.AvatarURL,
+			"role":     user.Role,
+		},
+	})
+}
+
 func (h *AuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	renderTemplate(w, r, "login", map[string]interface{}{
 		"Title":   "Login",
